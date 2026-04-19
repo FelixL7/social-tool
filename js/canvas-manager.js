@@ -229,12 +229,24 @@ class CanvasManager {
     /* ---- Serialization ---- */
 
     getState() {
-        return this.canvas.toJSON(['selectable', 'evented']);
+        return this.canvas.toJSON(['selectable', 'evented', 'editable']);
     }
 
     loadState(state) {
         return new Promise((resolve) => {
             this.canvas.loadFromJSON(state, () => {
+                this.canvas.getObjects().forEach((o) => {
+                    if (o.type === 'i-text' || o.type === 'text' || o.type === 'textbox') {
+                        o.set({
+                            selectable: true,
+                            evented: true,
+                            editable: true,
+                            hoverCursor: 'text',
+                        });
+                        if (typeof o.initBehavior === 'function') o.initBehavior();
+                        o.setCoords();
+                    }
+                });
                 this.canvas.renderAll();
                 resolve();
             });

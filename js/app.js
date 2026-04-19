@@ -16,6 +16,73 @@ function showToast(message, type = '') {
     toast._timeout = setTimeout(() => { toast.className = 'toast'; }, 2500);
 }
 
+/* ---- Google Fonts: dynamic on-demand loader ---- */
+
+const SYSTEM_FONTS = new Set([
+    'Arial', 'Helvetica', 'Georgia', 'Times New Roman',
+    'Courier New', 'Verdana', 'Impact',
+]);
+
+const _fontPromises = new Map();
+
+function loadGoogleFont(family) {
+    if (!family) return Promise.resolve();
+    if (SYSTEM_FONTS.has(family)) return Promise.resolve();
+    if (_fontPromises.has(family)) return _fontPromises.get(family);
+
+    const familyParam = family.replace(/ /g, '+');
+    const href = `https://fonts.googleapis.com/css2?family=${familyParam}:ital,wght@0,400;0,700;1,400;1,700&display=swap`;
+
+    const p = new Promise((resolve) => {
+        let link = document.querySelector(`link[data-font="${family}"]`);
+        const waitForFaces = () => {
+            Promise.all([
+                document.fonts.load(`400 16px "${family}"`),
+                document.fonts.load(`700 16px "${family}"`),
+                document.fonts.load(`italic 400 16px "${family}"`),
+            ]).catch(() => {}).then(() => resolve());
+        };
+
+        if (!link) {
+            link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.dataset.font = family;
+            link.addEventListener('load', waitForFaces, { once: true });
+            link.addEventListener('error', () => resolve(), { once: true });
+            document.head.appendChild(link);
+        } else if (link.sheet) {
+            waitForFaces();
+        } else {
+            link.addEventListener('load', waitForFaces, { once: true });
+            link.addEventListener('error', () => resolve(), { once: true });
+        }
+    });
+
+    _fontPromises.set(family, p);
+    return p;
+}
+
+function applyFontToObject(obj, family) {
+    if (!obj) return;
+    if (fabric && fabric.util && typeof fabric.util.clearFabricFontCache === 'function') {
+        fabric.util.clearFabricFontCache(family);
+    }
+    obj.set('fontFamily', family);
+    if (typeof obj.initDimensions === 'function') obj.initDimensions();
+    obj.setCoords();
+    canvasManager.canvas.requestRenderAll();
+}
+
+function preloadFontsFromCanvas() {
+    const fonts = new Set();
+    canvasManager.canvas.getObjects().forEach((o) => {
+        if (o.fontFamily) fonts.add(o.fontFamily);
+    });
+    const loaders = [...fonts].map(loadGoogleFont);
+    return Promise.all(loaders).then(() => canvasManager.canvas.renderAll());
+}
+
 /* ---- Helper: sync color input + hex field ---- */
 
 function linkColorInputs(colorId, hexId) {
@@ -93,7 +160,12 @@ document.getElementById('btn-bg-image-remove').addEventListener('click', () => {
    TOOLS
    ================================================================ */
 
-document.getElementById('tool-text').addEventListener('click', () => canvasManager.addText());
+document.getElementById('tool-text').addEventListener('click', async () => {
+    const family = document.getElementById('text-font').value || 'Inter';
+    await loadGoogleFont(family);
+    canvasManager.addText({ fontFamily: family });
+    canvasManager.canvas.renderAll();
+});
 document.getElementById('tool-rect').addEventListener('click', () => canvasManager.addRect());
 document.getElementById('tool-circle').addEventListener('click', () => canvasManager.addCircle());
 document.getElementById('tool-triangle').addEventListener('click', () => canvasManager.addTriangle());
@@ -137,6 +209,7 @@ document.getElementById('project-load').addEventListener('change', async (e) => 
     if (e.target.files[0]) {
         try {
             await exportManager.loadProject(e.target.files[0]);
+            await preloadFontsFromCanvas();
             showToast('Projekt geladen!', 'success');
         } catch (err) {
             showToast('Fehler: ' + err.message, 'error');
@@ -259,9 +332,12 @@ document.getElementById('obj-opacity').addEventListener('input', (e) => {
 });
 
 // Text font
-document.getElementById('text-font').addEventListener('change', (e) => {
+document.getElementById('text-font').addEventListener('change', async (e) => {
+    const family = e.target.value;
     const obj = canvasManager.canvas.getActiveObject();
-    if (obj) { obj.set('fontFamily', e.target.value); canvasManager.canvas.renderAll(); }
+    if (!obj) return;
+    await loadGoogleFont(family);
+    applyFontToObject(obj, family);
 });
 
 // Text size
@@ -383,6 +459,113 @@ document.getElementById('obj-angle').addEventListener('change', (e) => {
 });
 
 /* ================================================================
+   GRID (Anzeige + Snap)
+   ================================================================ */
+
+const grid = {
+    size: 10,
+    show: false,
+    snap: false,
+};
+
+const gridOverlayEl = document.getElementById('grid-overlay');
+const gridSizeEl    = document.getElementById('grid-size');
+const gridShowEl    = document.getElementById('grid-show');
+const gridSnapEl    = document.getElementById('grid-snap');
+
+function updateGridOverlay() {
+    gridOverlayEl.classList.toggle('show', grid.show);
+    const zoom = canvasManager.canvas.getZoom() || 1;
+    const px = Math.max(1, grid.size * zoom);
+    gridOverlayEl.style.backgroundSize = `${px}px ${px}px`;
+}
+
+// Re-draw when canvas display size changes (format change, window resize)
+new ResizeObserver(updateGridOverlay).observe(document.getElementById('canvas-wrapper'));
+
+gridSizeEl.addEventListener('change', () => {
+    const v = parseInt(gridSizeEl.value);
+    grid.size = isFinite(v) && v > 0 ? v : 10;
+    updateGridOverlay();
+});
+
+gridShowEl.addEventListener('change', () => {
+    grid.show = gridShowEl.checked;
+    updateGridOverlay();
+});
+
+gridSnapEl.addEventListener('change', () => {
+    grid.snap = gridSnapEl.checked;
+});
+
+function snapToGrid(v) {
+    return Math.round(v / grid.size) * grid.size;
+}
+
+canvasManager.canvas.on('object:moving', (e) => {
+    if (!grid.snap) return;
+    const obj = e.target;
+    obj.set({
+        left: snapToGrid(obj.left),
+        top:  snapToGrid(obj.top),
+    });
+});
+
+canvasManager.canvas.on('object:scaling', (e) => {
+    if (!grid.snap) return;
+    const obj = e.target;
+    const baseW = obj.width || 1;
+    const baseH = obj.height || 1;
+    const w = baseW * obj.scaleX;
+    const h = baseH * obj.scaleY;
+    const sw = Math.max(grid.size, snapToGrid(w));
+    const sh = Math.max(grid.size, snapToGrid(h));
+    obj.scaleX = sw / baseW;
+    obj.scaleY = sh / baseH;
+});
+
+updateGridOverlay();
+
+/* ================================================================
+   CLIPBOARD (Copy / Paste)
+   ================================================================ */
+
+let _clipboard = null;
+
+function copySelection() {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (!obj) return;
+    obj.clone((cloned) => { _clipboard = cloned; }, ['selectable', 'evented']);
+}
+
+function pasteClipboard() {
+    if (!_clipboard) return;
+    _clipboard.clone((cloned) => {
+        canvasManager.canvas.discardActiveObject();
+        cloned.set({
+            left: (cloned.left || 0) + 20,
+            top: (cloned.top || 0) + 20,
+            evented: true,
+        });
+
+        if (cloned.type === 'activeSelection') {
+            cloned.canvas = canvasManager.canvas;
+            cloned.forEachObject((o) => canvasManager.canvas.add(o));
+            cloned.setCoords();
+        } else {
+            canvasManager.canvas.add(cloned);
+        }
+
+        // Shift the stored clipboard too, so repeated pastes cascade
+        _clipboard.left = (_clipboard.left || 0) + 20;
+        _clipboard.top = (_clipboard.top || 0) + 20;
+
+        canvasManager.canvas.setActiveObject(cloned);
+        canvasManager.canvas.requestRenderAll();
+    }, ['selectable', 'evented']);
+}
+
+/* ================================================================
    KEYBOARD SHORTCUTS
    ================================================================ */
 
@@ -396,6 +579,22 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
         canvasManager.deleteSelected();
         e.preventDefault();
+    }
+
+    // Ctrl+C → copy selection
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (active) {
+            copySelection();
+            e.preventDefault();
+        }
+    }
+
+    // Ctrl+V → paste
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (_clipboard) {
+            pasteClipboard();
+            e.preventDefault();
+        }
     }
 
     // Ctrl+S → save project
@@ -414,7 +613,11 @@ document.addEventListener('keydown', (e) => {
 
     // T → add text
     if (e.key === 't' && !e.ctrlKey && !e.metaKey) {
-        canvasManager.addText();
+        const family = document.getElementById('text-font').value || 'Inter';
+        loadGoogleFont(family).then(() => {
+            canvasManager.addText({ fontFamily: family });
+            canvasManager.canvas.renderAll();
+        });
     }
 });
 
@@ -431,6 +634,21 @@ function scheduleThumbnailUpdate() {
 canvasManager.canvas.on('object:modified', scheduleThumbnailUpdate);
 canvasManager.canvas.on('object:added',    scheduleThumbnailUpdate);
 canvasManager.canvas.on('object:removed',  scheduleThumbnailUpdate);
+
+// Auto-load any Google Font needed by a newly added text (covers slide switches and project loads)
+canvasManager.canvas.on('object:added', (e) => {
+    const t = e && e.target;
+    if (t && t.fontFamily) {
+        loadGoogleFont(t.fontFamily).then(() => {
+            if (fabric && fabric.util && typeof fabric.util.clearFabricFontCache === 'function') {
+                fabric.util.clearFabricFontCache(t.fontFamily);
+            }
+            if (typeof t.initDimensions === 'function') t.initDimensions();
+            t.setCoords();
+            canvasManager.canvas.requestRenderAll();
+        });
+    }
+});
 
 /* ================================================================
    INIT

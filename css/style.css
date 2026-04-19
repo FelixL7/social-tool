@@ -396,10 +396,76 @@ body {
 #canvas-wrapper {
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
     line-height: 0;
+    position: relative;
 }
 
 #canvas-wrapper .canvas-container {
     border-radius: 2px;
+}
+
+#grid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: none;
+    z-index: 5;
+    background-image:
+        linear-gradient(to right, rgba(0, 0, 0, 0.18) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 1px, transparent 1px);
+    background-size: 10px 10px;
+}
+
+#grid-overlay.show {
+    display: block;
+}
+
+/* Toggle switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border, #444);
+    border-radius: 20px;
+    transition: background-color 0.15s;
+}
+
+.switch-slider::before {
+    content: '';
+    position: absolute;
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #fff;
+    border-radius: 50%;
+    transition: transform 0.15s;
+}
+
+.switch input:checked + .switch-slider {
+    background-color: #6c63ff;
+}
+
+.switch input:checked + .switch-slider::before {
+    transform: translateX(16px);
 }
 
 /* ===== Properties Panel ===== */
