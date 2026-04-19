@@ -6,6 +6,101 @@ const canvasManager = new CanvasManager('main-canvas');
 const slideManager  = new SlideManager(canvasManager);
 const exportManager = new ExportManager(canvasManager, slideManager);
 
+/* ================================================================
+   HISTORY (Undo / Redo — pro Slide)
+   ================================================================ */
+
+class HistoryManager {
+    constructor(canvasManager) {
+        this.cm = canvasManager;
+        this.undoStack = [];
+        this.redoStack = [];
+        this.maxSize = 60;
+        this.suspended = false;
+        this.replaying = false;
+    }
+
+    reset() {
+        this.undoStack = [];
+        this.redoStack = [];
+        this._push();
+        this._updateButtons();
+    }
+
+    _push() {
+        const state = JSON.stringify(this.cm.getState());
+        const last = this.undoStack[this.undoStack.length - 1];
+        if (last === state) return false;
+        this.undoStack.push(state);
+        if (this.undoStack.length > this.maxSize) this.undoStack.shift();
+        return true;
+    }
+
+    snapshot() {
+        if (this.suspended) return;
+        if (this._push()) {
+            this.redoStack = [];
+            this._updateButtons();
+        }
+    }
+
+    async undo() {
+        if (this.undoStack.length <= 1) return;
+        this.suspended = true;
+        this.replaying = true;
+        const current = this.undoStack.pop();
+        this.redoStack.push(current);
+        const prev = this.undoStack[this.undoStack.length - 1];
+        await this.cm.loadState(JSON.parse(prev));
+        this.suspended = false;
+        this.replaying = false;
+        this._updateButtons();
+    }
+
+    async redo() {
+        if (!this.redoStack.length) return;
+        this.suspended = true;
+        this.replaying = true;
+        const next = this.redoStack.pop();
+        this.undoStack.push(next);
+        await this.cm.loadState(JSON.parse(next));
+        this.suspended = false;
+        this.replaying = false;
+        this._updateButtons();
+    }
+
+    _updateButtons() {
+        const undoBtn = document.getElementById('tool-undo');
+        const redoBtn = document.getElementById('tool-redo');
+        if (undoBtn) undoBtn.disabled = this.undoStack.length <= 1;
+        if (redoBtn) redoBtn.disabled = this.redoStack.length === 0;
+    }
+}
+
+const history = new HistoryManager(canvasManager);
+
+// Record on mutating events (fired after user action completes)
+canvasManager.canvas.on('object:added',     () => history.snapshot());
+canvasManager.canvas.on('object:removed',   () => history.snapshot());
+canvasManager.canvas.on('object:modified',  () => history.snapshot());
+canvasManager.canvas.on('stacking:changed', () => history.snapshot());
+
+// Pause recording during loadFromJSON (fires many object:added) and reset
+// the stacks when a different slide's state is now on canvas.
+// Skip the reset during undo/redo replay, otherwise the stacks would be wiped
+// after every undo and only one step back would be possible.
+canvasManager.canvas.on('state:loading', () => { history.suspended = true; });
+canvasManager.canvas.on('state:loaded',  () => {
+    history.suspended = false;
+    if (!history.replaying) history.reset();
+});
+
+// Property-panel changes (color, size, font, position inputs etc.)
+// fire 'change' on commit but don't trigger object:modified. Snapshot manually.
+document.getElementById('properties-panel').addEventListener('change', () => {
+    history.snapshot();
+});
+
 /* ---- Toast Notification ---- */
 
 function showToast(message, type = '') {
@@ -136,6 +231,7 @@ document.getElementById('bg-palette').addEventListener('click', (e) => {
     document.getElementById('bg-color').value = color;
     document.getElementById('bg-color-hex').value = color;
     document.getElementById('btn-bg-image-remove').style.display = 'none';
+    history.snapshot();
 });
 
 // Background image
@@ -148,12 +244,14 @@ document.getElementById('bg-image-upload').addEventListener('change', async (e) 
         await canvasManager.setBackgroundImage(e.target.files[0]);
         document.getElementById('btn-bg-image-remove').style.display = '';
         e.target.value = '';
+        history.snapshot();
     }
 });
 
 document.getElementById('btn-bg-image-remove').addEventListener('click', () => {
     canvasManager.removeBackgroundImage();
     document.getElementById('btn-bg-image-remove').style.display = 'none';
+    history.snapshot();
 });
 
 /* ================================================================
@@ -184,6 +282,8 @@ document.getElementById('image-upload').addEventListener('change', async (e) => 
 document.getElementById('tool-delete').addEventListener('click',   () => canvasManager.deleteSelected());
 document.getElementById('tool-forward').addEventListener('click',  () => canvasManager.bringForward());
 document.getElementById('tool-backward').addEventListener('click', () => canvasManager.sendBackward());
+document.getElementById('tool-undo').addEventListener('click',     () => history.undo());
+document.getElementById('tool-redo').addEventListener('click',     () => history.redo());
 
 /* ================================================================
    SLIDES
@@ -373,6 +473,7 @@ document.getElementById('text-bold').addEventListener('click', () => {
     obj.set('fontWeight', obj.fontWeight === 'bold' ? 'normal' : 'bold');
     document.getElementById('text-bold').classList.toggle('active');
     canvasManager.canvas.renderAll();
+    canvasManager.canvas.fire('object:modified', { target: obj });
 });
 
 document.getElementById('text-italic').addEventListener('click', () => {
@@ -381,6 +482,7 @@ document.getElementById('text-italic').addEventListener('click', () => {
     obj.set('fontStyle', obj.fontStyle === 'italic' ? 'normal' : 'italic');
     document.getElementById('text-italic').classList.toggle('active');
     canvasManager.canvas.renderAll();
+    canvasManager.canvas.fire('object:modified', { target: obj });
 });
 
 document.getElementById('text-underline').addEventListener('click', () => {
@@ -389,6 +491,7 @@ document.getElementById('text-underline').addEventListener('click', () => {
     obj.set('underline', !obj.underline);
     document.getElementById('text-underline').classList.toggle('active');
     canvasManager.canvas.renderAll();
+    canvasManager.canvas.fire('object:modified', { target: obj });
 });
 
 // Alignment
@@ -401,6 +504,7 @@ document.getElementById('text-underline').addEventListener('click', () => {
             document.getElementById('text-align-' + a).classList.toggle('active', a === align);
         });
         canvasManager.canvas.renderAll();
+        canvasManager.canvas.fire('object:modified', { target: obj });
     });
 });
 
@@ -822,6 +926,18 @@ document.addEventListener('keydown', (e) => {
         }
     }
 
+    // Ctrl+Z → undo; Ctrl+Shift+Z or Ctrl+Y → redo
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        history.undo();
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+        e.preventDefault();
+        history.redo();
+        return;
+    }
+
     // Ctrl+S → save project
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
@@ -881,3 +997,6 @@ canvasManager.canvas.on('object:added', (e) => {
 
 // Initial thumbnail
 setTimeout(() => slideManager.updateCurrentThumbnail(), 200);
+
+// Seed history with the initial (empty) canvas state so undo/redo buttons start disabled correctly
+history.reset();

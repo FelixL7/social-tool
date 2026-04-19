@@ -264,6 +264,7 @@ class CanvasManager {
 
     loadState(state) {
         return new Promise((resolve) => {
+            this.canvas.fire('state:loading');
             this.canvas.loadFromJSON(state, () => {
                 this.canvas.getObjects().forEach((o) => {
                     if (o.type === 'i-text' || o.type === 'text' || o.type === 'textbox') {
@@ -278,6 +279,7 @@ class CanvasManager {
                     }
                 });
                 this.canvas.renderAll();
+                this.canvas.fire('state:loaded');
                 resolve();
             });
         });
