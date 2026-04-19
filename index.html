@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Tool - Instagram Post Creator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Dancing+Script:wght@400;700&family=Inter:wght@300;400;600;700&family=Montserrat:wght@300;400;600;700;900&family=Oswald:wght@300;400;600;700&family=Playfair+Display:wght@400;700;900&family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+</head>
+<body>
+
+    <!-- Top Toolbar -->
+    <header id="toolbar">
+        <div class="toolbar-section toolbar-left">
+            <div class="app-title">Social Tool</div>
+            <div class="format-selector">
+                <select id="format-select">
+                    <option value="post-square">Post Quadrat (1080 x 1080)</option>
+                    <option value="post-portrait">Post Hochformat (1080 x 1350)</option>
+                    <option value="post-landscape">Post Querformat (1080 x 566)</option>
+                    <option value="story">Story / Reel (1080 x 1920)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="toolbar-section toolbar-center">
+            <div class="tool-group">
+                <button id="tool-text" class="tool-btn" title="Text hinzufuegen (T)">
+                    <span class="tool-icon">T</span>
+                    <span class="tool-label">Text</span>
+                </button>
+                <button id="tool-image" class="tool-btn" title="Bild einfuegen">
+                    <span class="tool-icon">&ofcir;</span>
+                    <span class="tool-label">Bild</span>
+                </button>
+                <input type="file" id="image-upload" accept="image/*" hidden>
+            </div>
+            <div class="tool-divider"></div>
+            <div class="tool-group">
+                <button id="tool-rect" class="tool-btn" title="Rechteck">
+                    <span class="tool-icon rect-icon"></span>
+                    <span class="tool-label">Rechteck</span>
+                </button>
+                <button id="tool-circle" class="tool-btn" title="Kreis">
+                    <span class="tool-icon circle-icon"></span>
+                    <span class="tool-label">Kreis</span>
+                </button>
+                <button id="tool-triangle" class="tool-btn" title="Dreieck">
+                    <span class="tool-icon triangle-icon"></span>
+                    <span class="tool-label">Dreieck</span>
+                </button>
+                <button id="tool-line" class="tool-btn" title="Linie">
+                    <span class="tool-icon line-icon"></span>
+                    <span class="tool-label">Linie</span>
+                </button>
+            </div>
+            <div class="tool-divider"></div>
+            <div class="tool-group">
+                <button id="tool-forward" class="tool-btn" title="Nach vorne">
+                    <span class="tool-icon">&uarr;</span>
+                </button>
+                <button id="tool-backward" class="tool-btn" title="Nach hinten">
+                    <span class="tool-icon">&darr;</span>
+                </button>
+                <button id="tool-delete" class="tool-btn tool-btn-danger" title="Loeschen (Entf)">
+                    <span class="tool-icon">&times;</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="toolbar-section toolbar-right">
+            <button id="btn-save" class="action-btn" title="Projekt speichern (Ctrl+S)">Speichern</button>
+            <button id="btn-load" class="action-btn" title="Projekt laden">Laden</button>
+            <input type="file" id="project-load" accept=".json" hidden>
+            <div class="tool-divider"></div>
+            <button id="btn-export" class="action-btn action-btn-primary" title="Slide exportieren (Ctrl+E)">Export Slide</button>
+            <button id="btn-export-all" class="action-btn action-btn-primary" title="Alle Slides exportieren">Export Alle</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content">
+
+        <!-- Left: Slides Panel -->
+        <aside id="slides-panel">
+            <div class="panel-header">
+                <h2>Slides</h2>
+                <div class="panel-actions">
+                    <button id="btn-add-slide" class="panel-btn" title="Neuer Slide">+</button>
+                    <button id="btn-duplicate-slide" class="panel-btn" title="Slide duplizieren">&#x2750;</button>
+                    <button id="btn-delete-slide" class="panel-btn panel-btn-danger" title="Slide loeschen">&minus;</button>
+                </div>
+            </div>
+            <div id="slide-list" class="slide-list"></div>
+        </aside>
+
+        <!-- Center: Canvas Workspace -->
+        <section id="canvas-area">
+            <div id="canvas-wrapper">
+                <canvas id="main-canvas"></canvas>
+            </div>
+        </section>
+
+        <!-- Right: Properties Panel -->
+        <aside id="properties-panel">
+            <div class="panel-header">
+                <h2>Eigenschaften</h2>
+            </div>
+            <div class="panel-body">
+
+                <!-- Background -->
+                <div id="bg-properties" class="prop-section">
+                    <h3 class="prop-title">Hintergrund</h3>
+                    <div class="prop-row">
+                        <label>Farbe</label>
+                        <div class="color-input-wrap">
+                            <input type="color" id="bg-color" value="#ffffff">
+                            <input type="text" id="bg-color-hex" class="hex-input" value="#ffffff" maxlength="7">
+                        </div>
+                    </div>
+                    <div class="prop-row">
+                        <label>Hintergrundbild</label>
+                        <div class="bg-image-controls">
+                            <button id="btn-bg-image" class="small-btn">Bild waehlen</button>
+                            <button id="btn-bg-image-remove" class="small-btn small-btn-danger" style="display:none">Entfernen</button>
+                        </div>
+                        <input type="file" id="bg-image-upload" accept="image/*" hidden>
+                    </div>
+                    <div class="prop-row">
+                        <label>Schnellfarben</label>
+                        <div class="color-palette" id="bg-palette">
+                            <button class="palette-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+                            <button class="palette-swatch" data-color="#f8f9fa" style="background:#f8f9fa"></button>
+                            <button class="palette-swatch" data-color="#000000" style="background:#000000"></button>
+                            <button class="palette-swatch" data-color="#1a1a2e" style="background:#1a1a2e"></button>
+                            <button class="palette-swatch" data-color="#e74c3c" style="background:#e74c3c"></button>
+                            <button class="palette-swatch" data-color="#e67e22" style="background:#e67e22"></button>
+                            <button class="palette-swatch" data-color="#f1c40f" style="background:#f1c40f"></button>
+                            <button class="palette-swatch" data-color="#2ecc71" style="background:#2ecc71"></button>
+                            <button class="palette-swatch" data-color="#3498db" style="background:#3498db"></button>
+                            <button class="palette-swatch" data-color="#9b59b6" style="background:#9b59b6"></button>
+                            <button class="palette-swatch" data-color="#1abc9c" style="background:#1abc9c"></button>
+                            <button class="palette-swatch" data-color="#fd79a8" style="background:#fd79a8"></button>
+                            <button class="palette-swatch" data-color="#6c5ce7" style="background:#6c5ce7"></button>
+                            <button class="palette-swatch" data-color="#00cec9" style="background:#00cec9"></button>
+                            <button class="palette-swatch" data-color="#ffeaa7" style="background:#ffeaa7"></button>
+                            <button class="palette-swatch" data-color="#dfe6e9" style="background:#dfe6e9"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Object Properties (shown when object selected) -->
+                <div id="object-properties" class="prop-section" style="display:none;">
+                    <h3 class="prop-title">Objekt</h3>
+
+                    <div class="prop-row">
+                        <label>Fuellfarbe</label>
+                        <div class="color-input-wrap">
+                            <input type="color" id="obj-fill" value="#000000">
+                            <input type="text" id="obj-fill-hex" class="hex-input" value="#000000" maxlength="7">
+                        </div>
+                    </div>
+
+                    <div class="prop-row">
+                        <label>Deckkraft</label>
+                        <div class="range-wrap">
+                            <input type="range" id="obj-opacity" min="0" max="1" step="0.05" value="1">
+                            <span id="obj-opacity-val" class="range-val">100%</span>
+                        </div>
+                    </div>
+
+                    <!-- Text properties -->
+                    <div id="text-properties" style="display:none;">
+                        <div class="prop-row">
+                            <label>Schriftart</label>
+                            <select id="text-font" class="full-width">
+                                <option value="Inter">Inter</option>
+                                <option value="Montserrat">Montserrat</option>
+                                <option value="Poppins">Poppins</option>
+                                <option value="Playfair Display">Playfair Display</option>
+                                <option value="Oswald">Oswald</option>
+                                <option value="Bebas Neue">Bebas Neue</option>
+                                <option value="Dancing Script">Dancing Script</option>
+                                <option value="Arial">Arial</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Courier New">Courier New</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="Impact">Impact</option>
+                            </select>
+                        </div>
+                        <div class="prop-row">
+                            <label>Schriftgroesse</label>
+                            <input type="number" id="text-size" value="40" min="8" max="500" class="num-input">
+                        </div>
+                        <div class="prop-row">
+                            <label>Textfarbe</label>
+                            <div class="color-input-wrap">
+                                <input type="color" id="text-color" value="#000000">
+                                <input type="text" id="text-color-hex" class="hex-input" value="#000000" maxlength="7">
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Stil</label>
+                            <div class="btn-group">
+                                <button id="text-bold" class="style-btn" title="Fett"><strong>B</strong></button>
+                                <button id="text-italic" class="style-btn" title="Kursiv"><em>I</em></button>
+                                <button id="text-underline" class="style-btn" title="Unterstrichen"><u>U</u></button>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Ausrichtung</label>
+                            <div class="btn-group">
+                                <button id="text-align-left" class="style-btn" title="Linksbuendig">&#9776;</button>
+                                <button id="text-align-center" class="style-btn" title="Zentriert">&#9776;</button>
+                                <button id="text-align-right" class="style-btn" title="Rechtsbuendig">&#9776;</button>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Zeilenhoehe</label>
+                            <input type="number" id="text-line-height" value="1.2" min="0.5" max="5" step="0.1" class="num-input">
+                        </div>
+                    </div>
+
+                    <!-- Shape properties -->
+                    <div id="shape-properties" style="display:none;">
+                        <div class="prop-row">
+                            <label>Rahmenfarbe</label>
+                            <div class="color-input-wrap">
+                                <input type="color" id="shape-stroke" value="#000000">
+                                <input type="text" id="shape-stroke-hex" class="hex-input" value="#000000" maxlength="7">
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Rahmenbreite</label>
+                            <input type="number" id="shape-stroke-width" value="0" min="0" max="50" class="num-input">
+                        </div>
+                        <div class="prop-row" id="radius-row">
+                            <label>Eckenradius</label>
+                            <input type="number" id="shape-radius" value="0" min="0" max="500" class="num-input">
+                        </div>
+                    </div>
+
+                    <!-- Position / Size -->
+                    <div class="prop-row">
+                        <label>Position</label>
+                        <div class="pos-inputs">
+                            <div class="pos-field">
+                                <span>X</span>
+                                <input type="number" id="obj-left" class="num-input" value="0">
+                            </div>
+                            <div class="pos-field">
+                                <span>Y</span>
+                                <input type="number" id="obj-top" class="num-input" value="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="prop-row">
+                        <label>Groesse</label>
+                        <div class="pos-inputs">
+                            <div class="pos-field">
+                                <span>B</span>
+                                <input type="number" id="obj-width" class="num-input" value="0" min="1">
+                            </div>
+                            <div class="pos-field">
+                                <span>H</span>
+                                <input type="number" id="obj-height" class="num-input" value="0" min="1">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="prop-row">
+                        <label>Drehung</label>
+                        <div class="pos-inputs">
+                            <div class="pos-field">
+                                <span>&deg;</span>
+                                <input type="number" id="obj-angle" class="num-input" value="0" min="0" max="360">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="js/canvas-manager.js"></script>
+    <script src="js/slide-manager.js"></script>
+    <script src="js/export-manager.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
