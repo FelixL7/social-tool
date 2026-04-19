@@ -192,6 +192,8 @@ document.getElementById('tool-backward').addEventListener('click', () => canvasM
 document.getElementById('btn-add-slide').addEventListener('click',       () => slideManager.addSlide());
 document.getElementById('btn-duplicate-slide').addEventListener('click', () => slideManager.duplicateSlide());
 document.getElementById('btn-delete-slide').addEventListener('click',    () => slideManager.deleteSlide());
+document.getElementById('btn-slide-up').addEventListener('click',        () => slideManager.moveSlideUp());
+document.getElementById('btn-slide-down').addEventListener('click',      () => slideManager.moveSlideDown());
 
 /* ================================================================
    SAVE / LOAD / EXPORT
@@ -457,6 +459,148 @@ document.getElementById('obj-angle').addEventListener('change', (e) => {
     const obj = canvasManager.canvas.getActiveObject();
     if (obj) { obj.set('angle', parseInt(e.target.value)); canvasManager.canvas.renderAll(); }
 });
+
+/* ================================================================
+   EBENEN (Layer-Liste mit Drag & Drop)
+   ================================================================ */
+
+const layerListEl = document.getElementById('layer-list');
+
+function layerIconFor(obj) {
+    switch (obj.type) {
+        case 'i-text':
+        case 'text':
+        case 'textbox':   return 'T';
+        case 'rect':      return '\u25AD';
+        case 'circle':    return '\u25CF';
+        case 'triangle':  return '\u25B2';
+        case 'line':      return '\u2500';
+        case 'image':     return 'IMG';
+        default:          return '?';
+    }
+}
+
+function layerNameFor(obj) {
+    if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
+        const t = (obj.text || '').replace(/\s+/g, ' ').trim();
+        return t ? (t.length > 24 ? t.slice(0, 24) + '\u2026' : t) : 'Text';
+    }
+    if (obj.type === 'rect')     return 'Rechteck';
+    if (obj.type === 'circle')   return 'Kreis';
+    if (obj.type === 'triangle') return 'Dreieck';
+    if (obj.type === 'line')     return 'Linie';
+    if (obj.type === 'image')    return 'Bild';
+    return obj.type || 'Objekt';
+}
+
+function renderLayerList() {
+    if (!layerListEl) return;
+    const objs  = canvasManager.canvas.getObjects();
+    const active = canvasManager.canvas.getActiveObject();
+    layerListEl.innerHTML = '';
+
+    if (!objs.length) {
+        const empty = document.createElement('div');
+        empty.className = 'layer-empty';
+        empty.textContent = 'Keine Objekte';
+        layerListEl.appendChild(empty);
+        return;
+    }
+
+    // Display top-of-stack first (reverse of canvas order)
+    for (let i = objs.length - 1; i >= 0; i--) {
+        const obj = objs[i];
+        const el = document.createElement('div');
+        el.className = 'layer-item';
+        el.draggable = true;
+        el.dataset.canvasIdx = i;
+
+        if (active === obj || (active && active.type === 'activeSelection' && active._objects && active._objects.includes(obj))) {
+            el.classList.add('active');
+        }
+
+        const icon = document.createElement('span');
+        icon.className = 'layer-icon';
+        icon.textContent = layerIconFor(obj);
+
+        const name = document.createElement('span');
+        name.className = 'layer-name';
+        name.textContent = layerNameFor(obj);
+
+        el.appendChild(icon);
+        el.appendChild(name);
+
+        el.addEventListener('click', () => {
+            canvasManager.canvas.setActiveObject(obj);
+            canvasManager.canvas.requestRenderAll();
+        });
+
+        // Drag & drop
+        el.addEventListener('dragstart', (ev) => {
+            el.classList.add('dragging');
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', String(i));
+        });
+        el.addEventListener('dragend', () => {
+            el.classList.remove('dragging');
+            layerListEl.querySelectorAll('.drop-above, .drop-below').forEach((n) => {
+                n.classList.remove('drop-above', 'drop-below');
+            });
+        });
+        el.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            const rect = el.getBoundingClientRect();
+            const above = ev.clientY < rect.top + rect.height / 2;
+            el.classList.toggle('drop-above', above);
+            el.classList.toggle('drop-below', !above);
+        });
+        el.addEventListener('dragleave', () => {
+            el.classList.remove('drop-above', 'drop-below');
+        });
+        el.addEventListener('drop', (ev) => {
+            ev.preventDefault();
+            const srcIdx = parseInt(ev.dataTransfer.getData('text/plain'));
+            const tgtIdx = i;
+            if (!isFinite(srcIdx) || srcIdx === tgtIdx) return;
+
+            const rect = el.getBoundingClientRect();
+            const above = ev.clientY < rect.top + rect.height / 2;
+            // Display is reversed: "above" in list means HIGHER canvas index
+            let newCanvasIdx = above ? tgtIdx + 1 : tgtIdx;
+            // If moving a lower object up past its old position, account for removal
+            if (srcIdx < newCanvasIdx) newCanvasIdx--;
+            // Clamp
+            const max = canvasManager.canvas.getObjects().length - 1;
+            newCanvasIdx = Math.max(0, Math.min(max, newCanvasIdx));
+
+            const srcObj = canvasManager.canvas.getObjects()[srcIdx];
+            if (srcObj) {
+                canvasManager.canvas.moveTo(srcObj, newCanvasIdx);
+                canvasManager.canvas.setActiveObject(srcObj);
+                canvasManager.canvas.requestRenderAll();
+                renderLayerList();
+                slideManager.updateCurrentThumbnail();
+            }
+        });
+
+        layerListEl.appendChild(el);
+    }
+}
+
+// Keep list in sync with canvas state
+canvasManager.canvas.on('object:added',      renderLayerList);
+canvasManager.canvas.on('object:removed',    renderLayerList);
+canvasManager.canvas.on('object:modified',   renderLayerList);
+canvasManager.canvas.on('selection:created', renderLayerList);
+canvasManager.canvas.on('selection:updated', renderLayerList);
+canvasManager.canvas.on('selection:cleared', renderLayerList);
+canvasManager.canvas.on('stacking:changed', () => {
+    renderLayerList();
+    slideManager.updateCurrentThumbnail();
+});
+
+renderLayerList();
 
 /* ================================================================
    GRID (Anzeige + Snap)

@@ -48,6 +48,40 @@ class SlideManager {
         this.renderList();
     }
 
+    /* ---- Reorder ---- */
+
+    moveSlide(fromIdx, toIdx) {
+        if (fromIdx === toIdx) return;
+        if (fromIdx < 0 || fromIdx >= this.slides.length) return;
+        if (toIdx < 0 || toIdx >= this.slides.length) return;
+
+        this._saveCurrent();
+
+        const [slide] = this.slides.splice(fromIdx, 1);
+        this.slides.splice(toIdx, 0, slide);
+
+        // Track where the currently-active slide ended up
+        if (this.currentIndex === fromIdx) {
+            this.currentIndex = toIdx;
+        } else if (fromIdx < this.currentIndex && toIdx >= this.currentIndex) {
+            this.currentIndex--;
+        } else if (fromIdx > this.currentIndex && toIdx <= this.currentIndex) {
+            this.currentIndex++;
+        }
+
+        this.renderList();
+    }
+
+    moveSlideUp() {
+        if (this.currentIndex <= 0) return;
+        this.moveSlide(this.currentIndex, this.currentIndex - 1);
+    }
+
+    moveSlideDown() {
+        if (this.currentIndex < 0 || this.currentIndex >= this.slides.length - 1) return;
+        this.moveSlide(this.currentIndex, this.currentIndex + 1);
+    }
+
     /* ---- Switch ---- */
 
     _saveCurrent() {
@@ -109,6 +143,43 @@ class SlideManager {
             el.addEventListener('click', () => {
                 this.switchTo(i);
                 this.renderList();
+            });
+
+            // Drag & drop reorder
+            el.draggable = true;
+            el.dataset.slideIdx = i;
+
+            el.addEventListener('dragstart', (ev) => {
+                el.classList.add('dragging');
+                ev.dataTransfer.effectAllowed = 'move';
+                ev.dataTransfer.setData('text/plain', String(i));
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('dragging');
+                this.listEl.querySelectorAll('.drop-above, .drop-below').forEach((n) => {
+                    n.classList.remove('drop-above', 'drop-below');
+                });
+            });
+            el.addEventListener('dragover', (ev) => {
+                ev.preventDefault();
+                ev.dataTransfer.dropEffect = 'move';
+                const rect = el.getBoundingClientRect();
+                const above = ev.clientY < rect.top + rect.height / 2;
+                el.classList.toggle('drop-above', above);
+                el.classList.toggle('drop-below', !above);
+            });
+            el.addEventListener('dragleave', () => {
+                el.classList.remove('drop-above', 'drop-below');
+            });
+            el.addEventListener('drop', (ev) => {
+                ev.preventDefault();
+                const srcIdx = parseInt(ev.dataTransfer.getData('text/plain'));
+                if (!isFinite(srcIdx) || srcIdx === i) return;
+                const rect = el.getBoundingClientRect();
+                const above = ev.clientY < rect.top + rect.height / 2;
+                let toIdx = above ? i : i + 1;
+                if (srcIdx < toIdx) toIdx--;
+                this.moveSlide(srcIdx, toIdx);
             });
 
             this.listEl.appendChild(el);

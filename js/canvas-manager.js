@@ -216,14 +216,44 @@ class CanvasManager {
         this.canvas.renderAll();
     }
 
+    _reorder(obj, newIdx) {
+        const arr = this.canvas._objects;
+        const oldIdx = arr.indexOf(obj);
+        if (oldIdx < 0) return false;
+        const clamped = Math.max(0, Math.min(arr.length - 1, newIdx));
+        if (clamped === oldIdx) return false;
+        arr.splice(oldIdx, 1);
+        arr.splice(clamped, 0, obj);
+        this.canvas.setActiveObject(obj);
+        this.canvas.renderAll();
+        this.canvas.fire('stacking:changed', { target: obj });
+        return true;
+    }
+
     bringForward() {
         const obj = this.canvas.getActiveObject();
-        if (obj) { this.canvas.bringForward(obj); this.canvas.renderAll(); }
+        if (!obj) return;
+        const idx = this.canvas._objects.indexOf(obj);
+        this._reorder(obj, idx + 1);
     }
 
     sendBackward() {
         const obj = this.canvas.getActiveObject();
-        if (obj) { this.canvas.sendBackwards(obj); this.canvas.renderAll(); }
+        if (!obj) return;
+        const idx = this.canvas._objects.indexOf(obj);
+        this._reorder(obj, idx - 1);
+    }
+
+    bringToFront() {
+        const obj = this.canvas.getActiveObject();
+        if (!obj) return;
+        this._reorder(obj, this.canvas._objects.length - 1);
+    }
+
+    sendToBack() {
+        const obj = this.canvas.getActiveObject();
+        if (!obj) return;
+        this._reorder(obj, 0);
     }
 
     /* ---- Serialization ---- */
