@@ -391,6 +391,13 @@ body {
     cursor: grab;
 }
 
+.align-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.8;
+    font-style: italic;
+}
+
 .layer-icon {
     width: 20px;
     height: 20px;

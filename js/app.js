@@ -461,6 +461,87 @@ document.getElementById('obj-angle').addEventListener('change', (e) => {
 });
 
 /* ================================================================
+   AUSRICHTEN (an Slide oder an Auswahl-Bounding-Box)
+   ================================================================ */
+
+function alignObjects(mode) {
+    const canvas = canvasManager.canvas;
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    const multi = active.type === 'activeSelection';
+    let objs;
+
+    if (multi) {
+        // Work on absolute canvas coordinates — discard the group, align each,
+        // then re-select. Child coords inside activeSelection are relative,
+        // which makes absolute-pixel alignment awkward.
+        objs = active._objects.slice();
+        canvas.discardActiveObject();
+    } else {
+        objs = [active];
+    }
+
+    // Reference bbox: canvas (single selection) or combined bbox (multi)
+    const fmt = canvasManager.formats[canvasManager.currentFormat];
+    let refL, refT, refR, refB;
+
+    if (multi) {
+        refL = Infinity; refT = Infinity; refR = -Infinity; refB = -Infinity;
+        objs.forEach((o) => {
+            const br = o.getBoundingRect(true, true);
+            refL = Math.min(refL, br.left);
+            refT = Math.min(refT, br.top);
+            refR = Math.max(refR, br.left + br.width);
+            refB = Math.max(refB, br.top + br.height);
+        });
+    } else {
+        refL = 0; refT = 0; refR = fmt.width; refB = fmt.height;
+    }
+    const refCX = (refL + refR) / 2;
+    const refCY = (refT + refB) / 2;
+
+    objs.forEach((o) => {
+        const br = o.getBoundingRect(true, true);
+        let dx = 0, dy = 0;
+        switch (mode) {
+            case 'left':    dx = refL - br.left; break;
+            case 'right':   dx = refR - (br.left + br.width); break;
+            case 'hcenter': dx = refCX - (br.left + br.width / 2); break;
+            case 'top':     dy = refT - br.top; break;
+            case 'bottom':  dy = refB - (br.top + br.height); break;
+            case 'vcenter': dy = refCY - (br.top + br.height / 2); break;
+        }
+        o.set({ left: o.left + dx, top: o.top + dy });
+        o.setCoords();
+    });
+
+    if (multi) {
+        const sel = new fabric.ActiveSelection(objs, { canvas });
+        canvas.setActiveObject(sel);
+    }
+
+    canvas.fire('object:modified', { target: canvas.getActiveObject() });
+    canvas.requestRenderAll();
+}
+
+['left', 'hcenter', 'right', 'top', 'vcenter', 'bottom'].forEach((mode) => {
+    document.getElementById('align-' + mode).addEventListener('click', () => alignObjects(mode));
+});
+
+// Update hint based on selection count
+function updateAlignHint() {
+    const active = canvasManager.canvas.getActiveObject();
+    const hint = document.getElementById('align-hint');
+    if (!active || !hint) return;
+    hint.textContent = active.type === 'activeSelection'
+        ? 'An Auswahl ausrichten'
+        : 'An Slide ausrichten';
+}
+canvasManager.canvas.on('selection:created', updateAlignHint);
+canvasManager.canvas.on('selection:updated', updateAlignHint);
+
+/* ================================================================
    EBENEN (Layer-Liste mit Drag & Drop)
    ================================================================ */
 
