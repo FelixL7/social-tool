@@ -15,14 +15,19 @@
     <!-- Top Toolbar -->
     <header id="toolbar">
         <div class="toolbar-section toolbar-left">
-            <div class="app-title">Social Tool</div>
             <div class="format-selector">
                 <select id="format-select">
                     <option value="post-square">Post Quadrat (1080 x 1080)</option>
                     <option value="post-portrait">Post Hochformat (1080 x 1350)</option>
                     <option value="post-landscape">Post Querformat (1080 x 566)</option>
                     <option value="story">Story / Reel (1080 x 1920)</option>
+                    <option value="custom">Manuell</option>
                 </select>
+                <div id="custom-size" style="display:none;">
+                    <input type="number" id="custom-width" class="num-input" value="1080" min="1" max="10000" title="Breite" placeholder="B">
+                    <span>&times;</span>
+                    <input type="number" id="custom-height" class="num-input" value="1080" min="1" max="10000" title="Hoehe" placeholder="H">
+                </div>
             </div>
         </div>
 
@@ -56,6 +61,10 @@
                     <span class="tool-icon line-icon"></span>
                     <span class="tool-label">Linie</span>
                 </button>
+                <button id="tool-blob" class="tool-btn" title="Blobs">
+                    <span class="tool-icon blob-icon"></span>
+                    <span class="tool-label">Blob</span>
+                </button>
             </div>
             <div class="tool-divider"></div>
             <div class="tool-group">
@@ -73,11 +82,9 @@
             <div class="tool-group">
                 <button id="tool-undo" class="tool-btn" title="Rueckgaengig (Ctrl+Z)" disabled>
                     <span class="tool-icon">&#x21B6;</span>
-                    <span class="tool-label">Undo</span>
                 </button>
                 <button id="tool-redo" class="tool-btn" title="Wiederholen (Ctrl+Y)" disabled>
                     <span class="tool-icon">&#x21B7;</span>
-                    <span class="tool-label">Redo</span>
                 </button>
             </div>
         </div>
@@ -120,6 +127,7 @@
             <div id="canvas-wrapper">
                 <canvas id="main-canvas"></canvas>
                 <div id="grid-overlay"></div>
+                <div id="guides-overlay"></div>
             </div>
         </section>
 
@@ -149,26 +157,38 @@
                         <input type="file" id="bg-image-upload" accept="image/*" hidden>
                     </div>
                     <div class="prop-row">
-                        <label>Schnellfarben</label>
-                        <div class="color-palette" id="bg-palette">
-                            <button class="palette-swatch" data-color="#ffffff" style="background:#ffffff"></button>
-                            <button class="palette-swatch" data-color="#f8f9fa" style="background:#f8f9fa"></button>
-                            <button class="palette-swatch" data-color="#000000" style="background:#000000"></button>
-                            <button class="palette-swatch" data-color="#1a1a2e" style="background:#1a1a2e"></button>
-                            <button class="palette-swatch" data-color="#e74c3c" style="background:#e74c3c"></button>
-                            <button class="palette-swatch" data-color="#e67e22" style="background:#e67e22"></button>
-                            <button class="palette-swatch" data-color="#f1c40f" style="background:#f1c40f"></button>
-                            <button class="palette-swatch" data-color="#2ecc71" style="background:#2ecc71"></button>
-                            <button class="palette-swatch" data-color="#3498db" style="background:#3498db"></button>
-                            <button class="palette-swatch" data-color="#9b59b6" style="background:#9b59b6"></button>
-                            <button class="palette-swatch" data-color="#1abc9c" style="background:#1abc9c"></button>
-                            <button class="palette-swatch" data-color="#fd79a8" style="background:#fd79a8"></button>
-                            <button class="palette-swatch" data-color="#6c5ce7" style="background:#6c5ce7"></button>
-                            <button class="palette-swatch" data-color="#00cec9" style="background:#00cec9"></button>
-                            <button class="palette-swatch" data-color="#ffeaa7" style="background:#ffeaa7"></button>
-                            <button class="palette-swatch" data-color="#dfe6e9" style="background:#dfe6e9"></button>
+                        <div class="palette-header">
+                            <label>Schnellfarben</label>
+                            <button id="btn-palette-edit" class="palette-edit-btn" title="Bearbeiten">&#9998;</button>
+                        </div>
+                        <div class="color-palette" id="bg-palette"></div>
+                        <div id="palette-edit-controls" style="display:none;">
+                            <div class="palette-add-row">
+                                <input type="color" id="palette-new-color" value="#6c63ff">
+                                <button id="btn-palette-add" class="small-btn" style="flex:1;">+ Farbe</button>
+                                <button id="btn-palette-reset" class="small-btn" title="Zuruecksetzen">&#x21BA;</button>
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Guides -->
+                <div id="guides-properties" class="prop-section">
+                    <h3 class="prop-title">Hilfslinien</h3>
+                    <div class="prop-row">
+                        <label>Hilfslinien anzeigen</label>
+                        <label class="switch">
+                            <input type="checkbox" id="guides-show" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="prop-row">
+                        <div class="guides-add-row">
+                            <button id="btn-guide-h" class="small-btn">+ Horizontal</button>
+                            <button id="btn-guide-v" class="small-btn">+ Vertikal</button>
+                        </div>
+                    </div>
+                    <div id="guides-list" class="guides-list"></div>
                 </div>
 
                 <!-- Grid -->
@@ -338,6 +358,93 @@
                         </div>
                     </div>
 
+                    <!-- Blob properties -->
+                    <div id="blob-properties" style="display:none;">
+                        <div class="prop-row">
+                            <label>Flaeche Breite</label>
+                            <input type="number" id="blob-area-w" value="400" min="50" max="2000" class="num-input">
+                        </div>
+                        <div class="prop-row">
+                            <label>Flaeche Hoehe</label>
+                            <input type="number" id="blob-area-h" value="400" min="50" max="2000" class="num-input">
+                        </div>
+                        <div class="prop-row">
+                            <label>Hintergrundfarbe</label>
+                            <div class="color-input-wrap">
+                                <input type="color" id="blob-bg-color" value="#ffffff">
+                                <input type="text" id="blob-bg-color-hex" class="hex-input" value="#ffffff" maxlength="7">
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Kein Hintergrund</label>
+                            <label class="switch">
+                                <input type="checkbox" id="blob-bg-transparent" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="prop-row">
+                            <label>Anzahl Blobs</label>
+                            <input type="number" id="blob-count" value="1" min="1" max="50" class="num-input">
+                        </div>
+                        <div class="prop-row">
+                            <label>Rundung</label>
+                            <div class="range-wrap">
+                                <span class="range-label-sm">eckig</span>
+                                <input type="range" id="blob-smoothness" min="0" max="1" step="0.05" value="1">
+                                <span class="range-label-sm">rund</span>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Ecken</label>
+                            <div class="pos-inputs">
+                                <div class="pos-field">
+                                    <span>Min</span>
+                                    <input type="number" id="blob-corners-min" value="6" min="3" max="20" class="num-input">
+                                </div>
+                                <div class="pos-field">
+                                    <span>Max</span>
+                                    <input type="number" id="blob-corners-max" value="10" min="3" max="20" class="num-input">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Ueberlappung erlauben</label>
+                            <label class="switch">
+                                <input type="checkbox" id="blob-allow-overlap">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="prop-row">
+                            <label>Groessenmodus</label>
+                            <select id="blob-size-mode" class="full-width">
+                                <option value="equal">Alle gleich gross</option>
+                                <option value="mixed">Ein grosser + kleine</option>
+                            </select>
+                        </div>
+                        <div class="prop-row" id="blob-large-scale-row" style="display:none;">
+                            <label>Faktor grosser Blob</label>
+                            <input type="number" id="blob-large-scale" value="2.5" min="1.5" max="5" step="0.5" class="num-input">
+                        </div>
+                        <div class="prop-row">
+                            <label>Blob-Deckkraft</label>
+                            <div class="range-wrap">
+                                <input type="range" id="blob-opacity" min="0" max="1" step="0.05" value="1">
+                                <span id="blob-opacity-val" class="range-val">100%</span>
+                            </div>
+                        </div>
+                        <div class="prop-row">
+                            <label>Blob-Farben</label>
+                            <div id="blob-colors-list"></div>
+                            <button id="blob-add-color" class="small-btn" style="margin-top:4px;width:100%">+ Farbe hinzufuegen</button>
+                        </div>
+                        <div class="prop-row">
+                            <button id="blob-regenerate" class="small-btn" style="width:100%;padding:6px 10px;">Neu generieren</button>
+                        </div>
+                        <div class="prop-row">
+                            <button id="blob-ungroup" class="small-btn" style="width:100%;padding:6px 10px;">Einzeln bearbeiten</button>
+                        </div>
+                    </div>
+
                     <!-- Shape properties -->
                     <div id="shape-properties" style="display:none;">
                         <div class="prop-row">
@@ -354,6 +461,9 @@
                         <div class="prop-row" id="radius-row">
                             <label>Eckenradius</label>
                             <input type="number" id="shape-radius" value="0" min="0" max="500" class="num-input">
+                        </div>
+                        <div class="prop-row" id="path-edit-row" style="display:none;">
+                            <button id="btn-path-edit" class="small-btn" style="width:100%;padding:6px 10px;">Ecken bearbeiten</button>
                         </div>
                     </div>
 
@@ -423,6 +533,7 @@
     <div id="toast" class="toast"></div>
 
     <script src="js/canvas-manager.js"></script>
+    <script src="js/path-editor.js"></script>
     <script src="js/slide-manager.js"></script>
     <script src="js/export-manager.js"></script>
     <script src="js/app.js"></script>
