@@ -71,6 +71,8 @@ body {
     gap: 16px;
     flex-shrink: 0;
     z-index: 100;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .toolbar-section {
@@ -121,6 +123,24 @@ body {
 
 .format-selector select:focus {
     border-color: var(--accent);
+}
+
+#custom-size {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+}
+
+#custom-size .num-input {
+    width: 64px;
+    padding: 5px 6px;
+    font-size: 12px;
+}
+
+#custom-size span {
+    color: var(--text-muted);
+    font-size: 12px;
 }
 
 /* ===== Tool Buttons ===== */
@@ -222,6 +242,45 @@ body {
     height: 2px;
     background: currentColor;
     transform: rotate(-30deg);
+}
+
+.blob-icon {
+    display: block;
+    width: 14px;
+    height: 12px;
+    background: currentColor;
+    border-radius: 50% 40% 60% 35% / 45% 55% 40% 50%;
+}
+
+/* Blob color entries */
+.blob-color-entry {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.blob-color-entry input[type="color"] {
+    width: 28px;
+    height: 26px;
+    flex-shrink: 0;
+}
+
+.blob-color-entry .hex-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.blob-color-entry .blob-remove-color {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+    line-height: 1;
 }
 
 /* ===== Action Buttons ===== */
@@ -525,6 +584,112 @@ body {
     display: block;
 }
 
+/* Guides overlay */
+#guides-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 6;
+    overflow: hidden;
+}
+
+.guide-line {
+    position: absolute;
+    pointer-events: auto;
+    cursor: move;
+}
+
+.guide-line-h {
+    left: 0;
+    width: 100%;
+    height: 1px;
+    border-top: 1px dashed #ff4fa0;
+}
+
+.guide-line-v {
+    top: 0;
+    height: 100%;
+    width: 1px;
+    border-left: 1px dashed #ff4fa0;
+}
+
+.guide-line:hover {
+    border-color: #ff80c0;
+}
+
+.guide-line-h:hover {
+    height: 5px;
+    margin-top: -2px;
+    border-top-width: 2px;
+}
+
+.guide-line-v:hover {
+    width: 5px;
+    margin-left: -2px;
+    border-left-width: 2px;
+}
+
+/* Guides list in panel */
+.guides-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.guides-add-row {
+    display: flex;
+    gap: 4px;
+}
+
+.guides-add-row .small-btn {
+    flex: 1;
+}
+
+.guide-entry {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.guide-entry .guide-type {
+    width: 16px;
+    color: #ff4fa0;
+    font-weight: 600;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.guide-entry .num-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    font-size: 11px;
+}
+
+.guide-entry .guide-unit {
+    color: var(--text-muted);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.guide-entry .guide-remove {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1;
+}
+
 /* Toggle switch */
 .switch {
     position: relative;
@@ -719,6 +884,13 @@ select.full-width:focus {
     text-align: right;
 }
 
+.range-label-sm {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 /* ===== Button Groups ===== */
 .btn-group {
     display: flex;
@@ -778,6 +950,77 @@ select.full-width:focus {
 .palette-swatch:hover {
     border-color: var(--text);
     transform: scale(1.15);
+}
+
+.palette-swatch.editing {
+    cursor: default;
+}
+
+.palette-swatch .swatch-remove {
+    display: none;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 12px;
+    height: 12px;
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 8px;
+    line-height: 12px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+}
+
+.palette-swatch.editing .swatch-remove {
+    display: block;
+}
+
+.palette-swatch.editing {
+    position: relative;
+}
+
+.palette-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.palette-header label {
+    margin-bottom: 0 !important;
+}
+
+.palette-edit-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+}
+
+.palette-edit-btn:hover,
+.palette-edit-btn.active {
+    color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.palette-add-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.palette-add-row input[type="color"] {
+    width: 28px;
+    height: 26px;
+    flex-shrink: 0;
 }
 
 /* ===== Position Inputs ===== */
