@@ -5,6 +5,7 @@
 const canvasManager = new CanvasManager('main-canvas');
 const slideManager  = new SlideManager(canvasManager);
 const exportManager = new ExportManager(canvasManager, slideManager);
+const pathEditor    = new PathEditor(canvasManager);
 
 /* ================================================================
    HISTORY (Undo / Redo — pro Slide)
@@ -79,10 +80,10 @@ class HistoryManager {
 
 const history = new HistoryManager(canvasManager);
 
-// Record on mutating events (fired after user action completes)
-canvasManager.canvas.on('object:added',     () => history.snapshot());
-canvasManager.canvas.on('object:removed',   () => history.snapshot());
-canvasManager.canvas.on('object:modified',  () => history.snapshot());
+// Record on mutating events (skip path-editor helper objects)
+canvasManager.canvas.on('object:added',     (e) => { if (!e.target?._peHandle) history.snapshot(); });
+canvasManager.canvas.on('object:removed',   (e) => { if (!e.target?._peHandle) history.snapshot(); });
+canvasManager.canvas.on('object:modified',  (e) => { if (!e.target?._peHandle) history.snapshot(); });
 canvasManager.canvas.on('stacking:changed', () => history.snapshot());
 
 // Pause recording during loadFromJSON (fires many object:added) and reset
@@ -205,12 +206,34 @@ linkColorInputs('shape-stroke', 'shape-stroke-hex');
    FORMAT SELECTION
    ================================================================ */
 
+const customSizeEl = document.getElementById('custom-size');
+const customWidthEl = document.getElementById('custom-width');
+const customHeightEl = document.getElementById('custom-height');
+
 document.getElementById('format-select').addEventListener('change', (e) => {
-    canvasManager.setFormat(e.target.value);
+    const val = e.target.value;
+    customSizeEl.style.display = val === 'custom' ? 'flex' : 'none';
+    if (val === 'custom') {
+        const w = parseInt(customWidthEl.value) || 1080;
+        const h = parseInt(customHeightEl.value) || 1080;
+        canvasManager.formats['custom'] = { width: w, height: h, label: 'Manuell' };
+    }
+    canvasManager.setFormat(val);
     if (slideManager.slides[slideManager.currentIndex]) {
-        slideManager.slides[slideManager.currentIndex].format = e.target.value;
+        slideManager.slides[slideManager.currentIndex].format = val;
     }
 });
+
+function applyCustomSize() {
+    const w = parseInt(customWidthEl.value) || 1080;
+    const h = parseInt(customHeightEl.value) || 1080;
+    canvasManager.formats['custom'] = { width: w, height: h, label: 'Manuell' };
+    if (canvasManager.currentFormat === 'custom') {
+        canvasManager.updateCanvasSize();
+    }
+}
+customWidthEl.addEventListener('change', applyCustomSize);
+customHeightEl.addEventListener('change', applyCustomSize);
 
 /* ================================================================
    BACKGROUND
@@ -222,16 +245,94 @@ document.getElementById('bg-color').addEventListener('input', (e) => {
     document.getElementById('btn-bg-image-remove').style.display = 'none';
 });
 
-// Background palette swatches
-document.getElementById('bg-palette').addEventListener('click', (e) => {
-    const swatch = e.target.closest('.palette-swatch');
-    if (!swatch) return;
-    const color = swatch.dataset.color;
-    canvasManager.setBackgroundColor(color);
-    document.getElementById('bg-color').value = color;
-    document.getElementById('bg-color-hex').value = color;
-    document.getElementById('btn-bg-image-remove').style.display = 'none';
-    history.snapshot();
+// Background palette – editable quick colors
+const DEFAULT_PALETTE = [
+    '#ffffff','#f8f9fa','#000000','#1a1a2e','#e74c3c','#e67e22',
+    '#f1c40f','#2ecc71','#3498db','#9b59b6','#1abc9c','#fd79a8',
+    '#6c5ce7','#00cec9','#ffeaa7','#dfe6e9',
+];
+
+let paletteColors = JSON.parse(localStorage.getItem('st-palette')) || [...DEFAULT_PALETTE];
+let paletteEditing = false;
+const bgPaletteEl = document.getElementById('bg-palette');
+
+function savePalette() {
+    localStorage.setItem('st-palette', JSON.stringify(paletteColors));
+}
+
+function renderPalette() {
+    bgPaletteEl.innerHTML = '';
+    paletteColors.forEach((color, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'palette-swatch' + (paletteEditing ? ' editing' : '');
+        btn.dataset.color = color;
+        btn.style.background = color;
+
+        if (paletteEditing) {
+            const rm = document.createElement('span');
+            rm.className = 'swatch-remove';
+            rm.textContent = '\u00d7';
+            rm.addEventListener('click', (e) => {
+                e.stopPropagation();
+                paletteColors.splice(i, 1);
+                savePalette();
+                renderPalette();
+            });
+            btn.appendChild(rm);
+
+            // Click swatch in edit mode to change color
+            btn.addEventListener('click', () => {
+                const picker = document.createElement('input');
+                picker.type = 'color';
+                picker.value = color;
+                picker.style.position = 'absolute';
+                picker.style.opacity = '0';
+                picker.style.pointerEvents = 'none';
+                document.body.appendChild(picker);
+                picker.addEventListener('input', () => {
+                    paletteColors[i] = picker.value;
+                    savePalette();
+                    renderPalette();
+                });
+                picker.addEventListener('change', () => {
+                    document.body.removeChild(picker);
+                });
+                picker.click();
+            });
+        } else {
+            btn.addEventListener('click', () => {
+                canvasManager.setBackgroundColor(color);
+                document.getElementById('bg-color').value = color;
+                document.getElementById('bg-color-hex').value = color;
+                document.getElementById('btn-bg-image-remove').style.display = 'none';
+                history.snapshot();
+            });
+        }
+
+        bgPaletteEl.appendChild(btn);
+    });
+}
+
+renderPalette();
+
+document.getElementById('btn-palette-edit').addEventListener('click', () => {
+    paletteEditing = !paletteEditing;
+    document.getElementById('btn-palette-edit').classList.toggle('active', paletteEditing);
+    document.getElementById('palette-edit-controls').style.display = paletteEditing ? '' : 'none';
+    renderPalette();
+});
+
+document.getElementById('btn-palette-add').addEventListener('click', () => {
+    const color = document.getElementById('palette-new-color').value;
+    paletteColors.push(color);
+    savePalette();
+    renderPalette();
+});
+
+document.getElementById('btn-palette-reset').addEventListener('click', () => {
+    paletteColors = [...DEFAULT_PALETTE];
+    savePalette();
+    renderPalette();
 });
 
 // Background image
@@ -279,6 +380,7 @@ document.getElementById('image-upload').addEventListener('change', async (e) => 
     }
 });
 
+document.getElementById('tool-blob').addEventListener('click', () => canvasManager.addBlob());
 document.getElementById('tool-delete').addEventListener('click',   () => canvasManager.deleteSelected());
 document.getElementById('tool-forward').addEventListener('click',  () => canvasManager.bringForward());
 document.getElementById('tool-backward').addEventListener('click', () => canvasManager.sendBackward());
@@ -300,7 +402,10 @@ document.getElementById('btn-slide-down').addEventListener('click',      () => s
    ================================================================ */
 
 document.getElementById('btn-save').addEventListener('click', () => {
-    exportManager.saveProject();
+    exportManager.saveProject({
+        guides: guides.map(g => ({ axis: g.axis, pos: g.pos })),
+        palette: paletteColors,
+    });
     showToast('Projekt gespeichert!', 'success');
 });
 
@@ -310,8 +415,19 @@ document.getElementById('btn-load').addEventListener('click', () => {
 document.getElementById('project-load').addEventListener('change', async (e) => {
     if (e.target.files[0]) {
         try {
-            await exportManager.loadProject(e.target.files[0]);
+            const project = await exportManager.loadProject(e.target.files[0]);
             await preloadFontsFromCanvas();
+            // Restore guides
+            guides.length = 0;
+            if (project.guides && Array.isArray(project.guides)) {
+                project.guides.forEach(g => addGuide(g.axis, g.pos));
+            }
+            // Restore palette
+            if (project.palette && Array.isArray(project.palette)) {
+                paletteColors = project.palette;
+                savePalette();
+                renderPalette();
+            }
             showToast('Projekt geladen!', 'success');
         } catch (err) {
             showToast('Fehler: ' + err.message, 'error');
@@ -335,10 +451,69 @@ document.getElementById('btn-export-all').addEventListener('click', async () => 
    PROPERTIES PANEL
    ================================================================ */
 
-const objectPropsEl = document.getElementById('object-properties');
-const textPropsEl   = document.getElementById('text-properties');
-const shapePropsEl  = document.getElementById('shape-properties');
-const radiusRow     = document.getElementById('radius-row');
+const objectPropsEl  = document.getElementById('object-properties');
+const textPropsEl    = document.getElementById('text-properties');
+const shapePropsEl   = document.getElementById('shape-properties');
+const blobPropsEl    = document.getElementById('blob-properties');
+const radiusRow      = document.getElementById('radius-row');
+
+/* ---- Blob color list helpers ---- */
+
+function renderBlobColorList(colors) {
+    const list = document.getElementById('blob-colors-list');
+    list.innerHTML = '';
+    colors.forEach((c, i) => {
+        const entry = document.createElement('div');
+        entry.className = 'blob-color-entry';
+
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = c;
+        colorInput.addEventListener('input', () => {
+            const obj = canvasManager.canvas.getActiveObject();
+            if (obj && obj._blobConfig) {
+                obj._blobConfig.blobColors[i] = colorInput.value;
+                hexInput.value = colorInput.value;
+                canvasManager.updateBlob(obj);
+            }
+        });
+
+        const hexInput = document.createElement('input');
+        hexInput.type = 'text';
+        hexInput.className = 'hex-input';
+        hexInput.value = c;
+        hexInput.maxLength = 7;
+        hexInput.addEventListener('change', () => {
+            let v = hexInput.value.trim();
+            if (!v.startsWith('#')) v = '#' + v;
+            if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+                colorInput.value = v;
+                hexInput.value = v;
+                const obj = canvasManager.canvas.getActiveObject();
+                if (obj && obj._blobConfig) {
+                    obj._blobConfig.blobColors[i] = v;
+                    canvasManager.updateBlob(obj);
+                }
+            }
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'small-btn small-btn-danger blob-remove-color';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.addEventListener('click', () => {
+            const obj = canvasManager.canvas.getActiveObject();
+            if (obj && obj._blobConfig && obj._blobConfig.blobColors.length > 1) {
+                obj._blobConfig.blobColors.splice(i, 1);
+                canvasManager.updateBlob(obj);
+            }
+        });
+
+        entry.appendChild(colorInput);
+        entry.appendChild(hexInput);
+        if (colors.length > 1) entry.appendChild(removeBtn);
+        list.appendChild(entry);
+    });
+}
 
 function updatePropertiesPanel(obj) {
     if (!obj || obj.type === 'activeSelection') {
@@ -348,8 +523,10 @@ function updatePropertiesPanel(obj) {
 
     objectPropsEl.style.display = '';
 
+    const isBlob = !!(obj._blobConfig);
+
     // Fill
-    if (obj.fill && typeof obj.fill === 'string') {
+    if (!isBlob && obj.fill && typeof obj.fill === 'string') {
         document.getElementById('obj-fill').value = obj.fill;
         document.getElementById('obj-fill-hex').value = obj.fill;
     }
@@ -388,9 +565,10 @@ function updatePropertiesPanel(obj) {
     }
 
     // Shape
-    const isShape = ['rect', 'circle', 'triangle', 'line'].includes(obj.type);
+    const isShape = ['rect', 'circle', 'triangle', 'line', 'path'].includes(obj.type);
     shapePropsEl.style.display = isShape ? '' : 'none';
     radiusRow.style.display = obj.type === 'rect' ? '' : 'none';
+    document.getElementById('path-edit-row').style.display = obj.type === 'path' ? '' : 'none';
 
     if (isShape) {
         document.getElementById('shape-stroke').value = obj.stroke || '#000000';
@@ -400,7 +578,49 @@ function updatePropertiesPanel(obj) {
             document.getElementById('shape-radius').value = obj.rx || 0;
         }
     }
+
+    // Blob
+    blobPropsEl.style.display = isBlob ? '' : 'none';
+
+    if (isBlob) {
+        const cfg = obj._blobConfig;
+        document.getElementById('blob-area-w').value = cfg.areaWidth;
+        document.getElementById('blob-area-h').value = cfg.areaHeight;
+        document.getElementById('blob-bg-color').value = cfg.bgColor || '#ffffff';
+        document.getElementById('blob-bg-color-hex').value = cfg.bgColor || '#ffffff';
+        document.getElementById('blob-bg-transparent').checked = !!cfg.bgTransparent;
+        document.getElementById('blob-count').value = cfg.blobCount;
+        document.getElementById('blob-smoothness').value = cfg.smoothness != null ? cfg.smoothness : 1;
+        document.getElementById('blob-corners-min').value = cfg.cornersMin || 6;
+        document.getElementById('blob-corners-max').value = cfg.cornersMax || 10;
+        document.getElementById('blob-allow-overlap').checked = cfg.allowOverlap !== false;
+        document.getElementById('blob-size-mode').value = cfg.sizeMode || 'equal';
+        document.getElementById('blob-large-scale-row').style.display = cfg.sizeMode === 'mixed' ? '' : 'none';
+        document.getElementById('blob-large-scale').value = cfg.largeBlobScale || 2.5;
+        document.getElementById('blob-opacity').value = cfg.blobOpacity != null ? cfg.blobOpacity : 0.8;
+        document.getElementById('blob-opacity-val').textContent = Math.round((cfg.blobOpacity != null ? cfg.blobOpacity : 0.8) * 100) + '%';
+        renderBlobColorList(cfg.blobColors || ['#6c63ff']);
+    }
 }
+
+/* ---- Path Editor ---- */
+
+document.getElementById('btn-path-edit').addEventListener('click', () => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj.type === 'path') {
+        pathEditor.edit(obj);
+    }
+});
+
+// Close path editor when selecting a non-handle object
+canvasManager.canvas.on('selection:created', (e) => {
+    if (e.selected && e.selected[0] && e.selected[0]._peHandle) return;
+    pathEditor.close();
+});
+canvasManager.canvas.on('selection:updated', (e) => {
+    if (e.selected && e.selected[0] && e.selected[0]._peHandle) return;
+    pathEditor.close();
+});
 
 /* ---- Canvas Events ---- */
 
@@ -532,6 +752,131 @@ document.getElementById('shape-radius').addEventListener('change', (e) => {
     }
 });
 
+// Blob properties
+linkColorInputs('blob-bg-color', 'blob-bg-color-hex');
+
+function blobConfigChange(field, parser) {
+    return (e) => {
+        const obj = canvasManager.canvas.getActiveObject();
+        if (!obj || !obj._blobConfig) return;
+        obj._blobConfig[field] = parser ? parser(e.target.value) : e.target.value;
+        canvasManager.updateBlob(obj);
+    };
+}
+
+document.getElementById('blob-area-w').addEventListener('change', blobConfigChange('areaWidth', parseInt));
+document.getElementById('blob-area-h').addEventListener('change', blobConfigChange('areaHeight', parseInt));
+
+document.getElementById('blob-bg-color').addEventListener('input', (e) => {
+    document.getElementById('blob-bg-color-hex').value = e.target.value;
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.bgColor = e.target.value;
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-bg-transparent').addEventListener('change', (e) => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.bgTransparent = e.target.checked;
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-count').addEventListener('change', blobConfigChange('blobCount', parseInt));
+
+document.getElementById('blob-smoothness').addEventListener('input', (e) => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.smoothness = parseFloat(e.target.value);
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-corners-min').addEventListener('change', (e) => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (!obj || !obj._blobConfig) return;
+    const val = parseInt(e.target.value);
+    obj._blobConfig.cornersMin = val;
+    // Ensure max >= min
+    if (val > obj._blobConfig.cornersMax) {
+        obj._blobConfig.cornersMax = val;
+        document.getElementById('blob-corners-max').value = val;
+    }
+    // Corner count changed → need new shapes
+    obj._blobConfig.blobData = null;
+    canvasManager.updateBlob(obj);
+});
+
+document.getElementById('blob-corners-max').addEventListener('change', (e) => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (!obj || !obj._blobConfig) return;
+    const val = parseInt(e.target.value);
+    obj._blobConfig.cornersMax = val;
+    // Ensure min <= max
+    if (val < obj._blobConfig.cornersMin) {
+        obj._blobConfig.cornersMin = val;
+        document.getElementById('blob-corners-min').value = val;
+    }
+    // Corner count changed → need new shapes
+    obj._blobConfig.blobData = null;
+    canvasManager.updateBlob(obj);
+});
+
+document.getElementById('blob-allow-overlap').addEventListener('change', (e) => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.allowOverlap = e.target.checked;
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-size-mode').addEventListener('change', (e) => {
+    document.getElementById('blob-large-scale-row').style.display = e.target.value === 'mixed' ? '' : 'none';
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.sizeMode = e.target.value;
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-large-scale').addEventListener('change', blobConfigChange('largeBlobScale', parseFloat));
+
+document.getElementById('blob-opacity').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('blob-opacity-val').textContent = Math.round(val * 100) + '%';
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        obj._blobConfig.blobOpacity = val;
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-add-color').addEventListener('click', () => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        const palette = ['#6c63ff', '#e74c3c', '#2ecc71', '#f1c40f', '#3498db', '#9b59b6', '#1abc9c', '#e67e22'];
+        const next = palette[obj._blobConfig.blobColors.length % palette.length];
+        obj._blobConfig.blobColors.push(next);
+        canvasManager.updateBlob(obj);
+    }
+});
+
+document.getElementById('blob-regenerate').addEventListener('click', () => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        canvasManager.regenerateBlob(obj);
+    }
+});
+
+document.getElementById('blob-ungroup').addEventListener('click', () => {
+    const obj = canvasManager.canvas.getActiveObject();
+    if (obj && obj._blobConfig) {
+        canvasManager.ungroupBlob(obj);
+    }
+});
+
 // Position / Size / Angle
 document.getElementById('obj-left').addEventListener('change', (e) => {
     const obj = canvasManager.canvas.getActiveObject();
@@ -652,6 +997,7 @@ canvasManager.canvas.on('selection:updated', updateAlignHint);
 const layerListEl = document.getElementById('layer-list');
 
 function layerIconFor(obj) {
+    if (obj._blobConfig) return '\u25CF';
     switch (obj.type) {
         case 'i-text':
         case 'text':
@@ -660,12 +1006,14 @@ function layerIconFor(obj) {
         case 'circle':    return '\u25CF';
         case 'triangle':  return '\u25B2';
         case 'line':      return '\u2500';
+        case 'path':      return '\u25CF';
         case 'image':     return 'IMG';
         default:          return '?';
     }
 }
 
 function layerNameFor(obj) {
+    if (obj._blobConfig) return 'Blobs (' + obj._blobConfig.blobCount + ')';
     if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
         const t = (obj.text || '').replace(/\s+/g, ' ').trim();
         return t ? (t.length > 24 ? t.slice(0, 24) + '\u2026' : t) : 'Text';
@@ -674,6 +1022,7 @@ function layerNameFor(obj) {
     if (obj.type === 'circle')   return 'Kreis';
     if (obj.type === 'triangle') return 'Dreieck';
     if (obj.type === 'line')     return 'Linie';
+    if (obj.type === 'path')     return 'Blob';
     if (obj.type === 'image')    return 'Bild';
     return obj.type || 'Objekt';
 }
@@ -692,8 +1041,9 @@ function renderLayerList() {
         return;
     }
 
-    // Display top-of-stack first (reverse of canvas order)
+    // Display top-of-stack first (reverse of canvas order), skip editor handles
     for (let i = objs.length - 1; i >= 0; i--) {
+        if (objs[i]._peHandle) continue;
         const obj = objs[i];
         const el = document.createElement('div');
         el.className = 'layer-item';
@@ -854,6 +1204,133 @@ canvasManager.canvas.on('object:scaling', (e) => {
 });
 
 updateGridOverlay();
+
+/* ================================================================
+   HILFSLINIEN (Guides)
+   ================================================================ */
+
+const guides = [];          // { id, axis: 'h'|'v', pos: number (canvas px) }
+let guidesVisible = true;
+let _guideIdCounter = 0;
+
+const guidesOverlayEl = document.getElementById('guides-overlay');
+const guidesListEl    = document.getElementById('guides-list');
+
+function addGuide(axis, pos) {
+    const id = ++_guideIdCounter;
+    const fmt = canvasManager.formats[canvasManager.currentFormat];
+    if (pos == null) pos = axis === 'h' ? Math.round(fmt.height / 2) : Math.round(fmt.width / 2);
+    guides.push({ id, axis, pos });
+    renderGuides();
+    renderGuideList();
+    return id;
+}
+
+function removeGuide(id) {
+    const idx = guides.findIndex(g => g.id === id);
+    if (idx >= 0) guides.splice(idx, 1);
+    renderGuides();
+    renderGuideList();
+}
+
+function updateGuidePos(id, pos) {
+    const g = guides.find(g => g.id === id);
+    if (g) { g.pos = pos; renderGuides(); renderGuideList(); }
+}
+
+function renderGuides() {
+    guidesOverlayEl.innerHTML = '';
+    if (!guidesVisible) return;
+    const zoom = canvasManager.canvas.getZoom() || 1;
+
+    guides.forEach(g => {
+        const el = document.createElement('div');
+        el.className = 'guide-line guide-line-' + g.axis;
+
+        if (g.axis === 'h') {
+            el.style.top = (g.pos * zoom) + 'px';
+        } else {
+            el.style.left = (g.pos * zoom) + 'px';
+        }
+
+        // Drag to reposition
+        let dragging = false, startMouse = 0, startPos = 0;
+        el.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            dragging = true;
+            startMouse = g.axis === 'h' ? e.clientY : e.clientX;
+            startPos = g.pos;
+
+            const onMove = (ev) => {
+                if (!dragging) return;
+                const delta = (g.axis === 'h' ? ev.clientY : ev.clientX) - startMouse;
+                g.pos = Math.max(0, startPos + delta / zoom);
+                if (g.axis === 'h') {
+                    el.style.top = (g.pos * zoom) + 'px';
+                } else {
+                    el.style.left = (g.pos * zoom) + 'px';
+                }
+            };
+            const onUp = () => {
+                dragging = false;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                renderGuideList();
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+
+        guidesOverlayEl.appendChild(el);
+    });
+}
+
+function renderGuideList() {
+    guidesListEl.innerHTML = '';
+    guides.forEach(g => {
+        const entry = document.createElement('div');
+        entry.className = 'guide-entry';
+
+        const type = document.createElement('span');
+        type.className = 'guide-type';
+        type.textContent = g.axis === 'h' ? '—' : '|';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'num-input';
+        input.value = Math.round(g.pos);
+        input.min = 0;
+        input.addEventListener('change', () => {
+            updateGuidePos(g.id, parseInt(input.value) || 0);
+        });
+
+        const unit = document.createElement('span');
+        unit.className = 'guide-unit';
+        unit.textContent = 'px';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'small-btn small-btn-danger guide-remove';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.addEventListener('click', () => removeGuide(g.id));
+
+        entry.appendChild(type);
+        entry.appendChild(input);
+        entry.appendChild(unit);
+        entry.appendChild(removeBtn);
+        guidesListEl.appendChild(entry);
+    });
+}
+
+document.getElementById('btn-guide-h').addEventListener('click', () => addGuide('h'));
+document.getElementById('btn-guide-v').addEventListener('click', () => addGuide('v'));
+
+document.getElementById('guides-show').addEventListener('change', (e) => {
+    guidesVisible = e.target.checked;
+    renderGuides();
+});
+
+// Re-render guides when canvas zoom/size changes
+new ResizeObserver(renderGuides).observe(document.getElementById('canvas-wrapper'));
 
 /* ================================================================
    CLIPBOARD (Copy / Paste)
